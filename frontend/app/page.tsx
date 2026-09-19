@@ -35,6 +35,23 @@ function htmlFromMarkdown(value = "") {
   return { __html: marked.parse(value) as string };
 }
 
+async function readTravelResponse(response: Response): Promise<TravelResponse> {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    return response.json() as Promise<TravelResponse>;
+  }
+
+  const body = await response.text();
+  return {
+    success: false,
+    error: body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "The travel service returned an unexpected response.",
+    thread_id: "",
+    answer: "",
+    requires_approval: false
+  };
+}
+
 export default function Home() {
   const [message, setMessage] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -64,7 +81,7 @@ export default function Home() {
     setLoading(true); setError("");
     try {
       const response = await fetch("/api/travel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: message.trim(), thread_id: threadId }) });
-      const data = await response.json() as TravelResponse;
+      const data = await readTravelResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || "TripMate could not create this plan.");
       setPlan(data); setThreadId(data.thread_id);
     } catch (err) { setError(err instanceof Error ? err.message : "Something went wrong while planning your trip."); }
@@ -76,7 +93,7 @@ export default function Home() {
     setLoading(true); setError("");
     try {
       const response = await fetch("/api/travel/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ thread_id: threadId, approved, feedback: feedback.trim() }) });
-      const data = await response.json() as TravelResponse;
+      const data = await readTravelResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || "TripMate could not update this plan.");
       setPlan(data); setFeedback("");
     } catch (err) { setError(err instanceof Error ? err.message : "Something went wrong while updating your trip."); }
