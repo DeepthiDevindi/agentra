@@ -721,15 +721,36 @@ graph.add_edge("guardrail_blocked", END)
 # PostgreSQL Checkpointer - original persistence kept
 # =========================
 DATABASE_URL = get_database_url()
-_conn = psycopg.connect(
-    DATABASE_URL,
-    autocommit=True,
-    row_factory=dict_row,
-)
-checkpointer = PostgresSaver(_conn)
-checkpointer.setup()
+def _create_checkpointer():
+    connection = psycopg.connect(
+        DATABASE_URL,
+        autocommit=True,
+        row_factory=dict_row,
+        connect_timeout=10,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=3,
+    )
+    saver = PostgresSaver(connection)
+    saver.setup()
+    return connection, saver
 
+
+_conn, checkpointer = _create_checkpointer()
 travel_graph = graph.compile(checkpointer=checkpointer)
+
+
+def _reconnect_checkpointer():
+    global _conn, checkpointer, travel_graph
+
+    try:
+        _conn.close()
+    except Exception:
+        pass
+
+    _conn, checkpointer = _create_checkpointer()
+    travel_graph = graph.compile(checkpointer=checkpointer)
 
 
 # =========================
@@ -795,28 +816,33 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
 
     config = {"configurable": {"thread_id": thread_id}}
 
-    result = travel_graph.invoke(
-        {
-            "messages": [HumanMessage(content=user_input)],
-            "user_query": user_input,
-            "guardrail_allowed": True,
-            "guardrail_reason": "",
-            "selected_agents": [],
-            "trip_constraints": _empty_constraints(),
-            "supervisor_reasoning": "",
-            "flight_results": "",
-            "hotel_results": "",
-            "weather_results": "",
-            "budget_results": "",
-            "itinerary": "",
-            "approval_request": "",
-            "approved": False,
-            "human_feedback": "",
-            "final_response": "",
-            "llm_calls": 0,
-        },
-        config=config,
-    )
+    graph_input = {
+        "messages": [HumanMessage(content=user_input)],
+        "user_query": user_input,
+        "guardrail_allowed": True,
+        "guardrail_reason": "",
+        "selected_agents": [],
+        "trip_constraints": _empty_constraints(),
+        "supervisor_reasoning": "",
+        "flight_results": "",
+        "hotel_results": "",
+        "weather_results": "",
+        "budget_results": "",
+        "itinerary": "",
+        "approval_request": "",
+        "approved": False,
+        "human_feedback": "",
+        "final_response": "",
+        "llm_calls": 0,
+    }
+
+    try:
+        result = travel_graph.invoke(graph_input, config=config)
+    except psycopg.OperationalError as exc:
+        if "closed" not in str(exc).lower():
+            raise
+        _reconnect_checkpointer()
+        result = travel_graph.invoke(graph_input, config=config)
 
     return _serialize_result(result, thread_id)
 
@@ -831,14 +857,19 @@ def resume_travel_agent(
         raise ValueError("thread_id is required to resume a travel plan.")
 
     config = {"configurable": {"thread_id": thread_id}}
-    result = travel_graph.invoke(
-        Command(
-            resume={
-                "approved": approved,
-                "feedback": feedback.strip(),
-            }
-        ),
-        config=config,
+    resume_input = Command(
+        resume={
+            "approved": approved,
+            "feedback": feedback.strip(),
+        }
     )
+
+    try:
+        result = travel_graph.invoke(resume_input, config=config)
+    except psycopg.OperationalError as exc:
+        if "closed" not in str(exc).lower():
+            raise
+        _reconnect_checkpointer()
+        result = travel_graph.invoke(resume_input, config=config)
 
     return _serialize_result(result, thread_id)
