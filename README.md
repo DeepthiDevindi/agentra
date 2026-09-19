@@ -54,6 +54,20 @@ uvicorn app:app --reload --host 127.0.0.1 --port 8000
 
 Visit http://127.0.0.1:8000 in your browser to use the TripMate frontend.
 
+Next.js frontend
+-----------------
+The redesigned frontend lives in `frontend/` and keeps the FastAPI API contract unchanged.
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Visit http://localhost:3000. The Next.js rewrite proxy forwards `/api/travel` and
+`/api/travel/approve` to the FastAPI server at `http://127.0.0.1:8000`. Set
+`BACKEND_URL` in `frontend/.env.local` when the backend runs elsewhere.
+
 Running the MCP server (example)
 - The repository includes `custom_weather_mcp_server.py` as an example MCP server. Run it in a separate terminal if you want to experiment with custom adapters used by the demo.
 
