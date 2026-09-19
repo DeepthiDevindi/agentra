@@ -753,6 +753,20 @@ def _reconnect_checkpointer():
     travel_graph = graph.compile(checkpointer=checkpointer)
 
 
+def _is_retryable_database_error(exc: psycopg.OperationalError) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "closed",
+            "could not receive data",
+            "connection abort",
+            "ssl syscall",
+            "connection reset",
+        )
+    )
+
+
 # =========================
 # FastAPI-facing helpers
 # =========================
@@ -839,7 +853,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
     try:
         result = travel_graph.invoke(graph_input, config=config)
     except psycopg.OperationalError as exc:
-        if "closed" not in str(exc).lower():
+        if not _is_retryable_database_error(exc):
             raise
         _reconnect_checkpointer()
         result = travel_graph.invoke(graph_input, config=config)
@@ -867,7 +881,7 @@ def resume_travel_agent(
     try:
         result = travel_graph.invoke(resume_input, config=config)
     except psycopg.OperationalError as exc:
-        if "closed" not in str(exc).lower():
+        if not _is_retryable_database_error(exc):
             raise
         _reconnect_checkpointer()
         result = travel_graph.invoke(resume_input, config=config)
