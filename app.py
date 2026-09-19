@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import traceback
 
 import uvicorn
@@ -156,5 +157,5 @@ if __name__ == "__main__":
         "app:app",
         host="127.0.0.1",
         port=8000,
-        reload=True,
+        reload=os.getenv("UVICORN_RELOAD", "false").lower() == "true",
     )
