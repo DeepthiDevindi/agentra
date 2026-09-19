@@ -83,6 +83,7 @@ API Endpoints
 
 Configuration & environment
 - Secrets and API keys are not included in the repo. Use environment variables or a `.env` file for any required keys consumed by `langgraph`, `langchain`, or other adapters.
+- `GROQ_MODEL` is optional; it defaults to `openai/gpt-oss-120b`. Set it to another model returned by your Groq account's `/openai/v1/models` endpoint when needed.
 
 Development notes
 - The project keeps synchronous convenience wrappers in `backend.py` while running an async FastAPI server — `nest_asyncio` is applied in `app.py` to allow the sync helpers to call async MCP helpers.
